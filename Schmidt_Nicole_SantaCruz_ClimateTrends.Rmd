@@ -1,0 +1,361 @@
+---
+title: "Climate Trends for Santa Cruz"
+author: "Nicole Schmidt"
+date: "4/5/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Attach libraries and read in data 
+
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(janitor)
+library(chron)
+
+
+climate <- read.table("2532221.csv", fill = TRUE,
+                      sep = ',', header = T) %>% 
+  clean_names()
+
+# set date
+
+# tidy 
+climate_1900 <- climate %>% 
+  filter(date >= "1900-01-01") %>% 
+  filter(date < "2020-12-31") %>% 
+ mutate(date = lubridate::ymd(date))
+
+climate_1900
+
+
+```
+
+### Explore the Data
+
+#### TMAX
+```{r}
+# Daily data of air temperature 
+
+ggplot(climate_1900, aes(x = date, y = tmax))+
+  geom_line()+
+  labs(y = "Daily Maximum Temperature (degrees F)",
+       x = "Date",
+       title = "Daily Maximum Temperature in Santa Cruz from 1900-2020")+
+  theme_minimal()
+
+```
+
+#### TMIN
+```{r}
+
+ggplot(climate_1900, aes(x = date, y = tmin))+
+  geom_line()+
+  labs(y = "Daily Minimum Temperature (degrees F)",
+       x = "Date",
+       title = "Daily Minimum Temperature in Santa Cruz from 1900 - 2020")+
+  theme_minimal()
+
+
+```
+
+### Precipitation 
+```{r}
+# Temperature: Average of the previous and following date
+# Precipitation: For dry places like the Sierra,assume no rainwhere data is missing (This maynot work for other places. Be careful!)
+
+# Find the rows with missing data
+fillrow = which(is.na(climate_1900$prcp))
+fillrow
+climate_1900$prcp[fillrow]=0
+# replot to make sure it works 
+
+ggplot(climate_1900, aes(x = date, y = prcp))+
+geom_line()+
+labs(y="Daily rainfall (inches)", x ="Date",
+     title = "Daily precipitation measured in Santa Cruz from 1900 - 2021")
+
+
+```
+
+####NA for Temperature 
+```{r}
+
+fillrow = which(is.na(climate_1900$tmax) | climate_1900$tmax < 40)
+fillrow = fillrow[2:length(fillrow)]
+climate_1900$tmax[fillrow]=(climate_1900$tmax[fillrow+1]+climate_1900$tmax[fillrow-1])/2
+
+
+ggplot(climate_1900, aes(date, climate_1900$tmax))+
+  geom_line()+ labs(y="Daily Maximum Temperature (degrees f)",
+                    x="Date",
+                      title = "Daily maximum temperature in Santa Cruz from 1900 - 2020")+
+  theme_minimal()
+
+```
+
+#### NA for minimum temperature
+```{r}
+
+fillrow = which(is.na(climate_1900$tmin) | climate_1900$tmin > 15)
+fillrow = fillrow[2:length(fillrow)]
+climate_1900$tmax[fillrow]=(climate_1900$tmax[fillrow+1]+climate_1900$tmax[fillrow-1])/2
+
+
+ggplot(climate_1900, aes(date, climate_1900$tmin))+
+  geom_line()+ labs(y="Daily Maximum Temperature (degrees f)",
+                    x="Date",
+                      title = "Daily minimim temperature in Santa Cruz from 1900 - 2020")+
+  theme_minimal()
+
+
+```
+
+
+### Is there a trend ?
+```{r}
+
+climate_trend <- climate_1900 %>% 
+  group_by(year(date)) %>% 
+  summarise(tmax = mean(tmax),
+            tmin = mean(tmin),
+            prcp = sum(prcp))
+
+climate_trend$dt = unique(year(date))
+
+climate_trend
+
+```
+
+```{r}
+
+ggplot(climate_trend, aes (x = dt, y = tmax))+
+   labs(x = "Year", y = "Average temperature",
+       title = "Trend in annual average maximum & minimum temperatures in Santa Cruz",
+       subtitle = "1900 - 2020")+
+  geom_point(col = "red")+
+  scale_y_continuous(limits = c(climate_trend$tmin),
+                     max(climate_trend$tmax))+
+  geom_point(data = climate_trend, aes(x = dt, tmin), col = "blue")+
+  stat_smooth(method="lm", col="red")+
+  stat_smooth(data=climate_trend, aes(x=dt,tmin), col="blue", method="lm")+
+  theme_minimal()
+
+```
+
+Now let’s calculate the slope (or how quickly temperatures are rising; we do this with linear regression)
+```{r}
+
+res=lm(tmin~dt, data=climate_trend)
+summary(res)
+
+```
+
+```{r}
+confint(res,"dt", level=0.95)
+```
+
+```{r}
+ggplot(climate_trend, aes(x=dt, y=tmin))+ 
+  labs(x = "Year", y = "Average minimum temperature (degrees f)",
+       title = " Trend in average annual minimum temperature in Santa Cruz (1900 - 2020)")+
+  stat_summary(fun.y="mean", geom="point", col="red", size=4)+
+  theme(axis.text=element_text(size=14, face="bold"), 
+        axis.title=element_text(size=14, face="bold"))+ 
+  geom_smooth(method="lm")
+```
+
+```{r}
+res=lm(tmax~dt, data=climate_trend)
+summary(res)
+```
+
+```{r}
+confint(res,"dt", level=0.95)
+```
+
+```{r}
+ggplot(climate_trend, aes(x=dt, y=tmax)) + 
+  stat_summary(fun.y="mean", geom="point", col="red", size=4)+
+  theme(axis.text=element_text(size=14, face="bold"),
+        axis.title=element_text(size=14, face="bold")) +
+  geom_smooth(method="lm")
+```
+
+We might also cut the data into specific periods and see how the slope is changing as a function of time.
+```{r}
+#tmin first hald a century 
+
+# early portion
+res_late=lm(prcp~dt, 
+             data=subset(climate_trend, climate_trend$dt %in% c(2000:2020)))
+summary(res_early)
+
+```
+
+```{r}
+confint(res_late,"dt", level=0.95)
+
+```
+
+```{r}
+ggplot(subset(climate_trend, climate_trend$dt %in% c(1952:1970)), 
+       aes(x=dt, y=tmin))+
+  stat_summary(fun.y="mean", geom="point", col="red", size=4)+
+  theme(axis.text=element_text(size=14, face="bold"), 
+        axis.title=element_text(size=14, face="bold")) + 
+  geom_smooth(method="lm")
+```
+
+```{r}
+
+res_late=lm(tmin~dt, 
+            data=subset(climate_trend, climate_trend$dt %in% c(1995:2021)))
+summary(res_late)
+
+```
+
+```{r}
+confint(res_late,"dt", level=0.90)
+```
+
+```{r}
+# tmin lastr decades 
+ggplot(subset(climate_trend,
+              climate_trend$dt %in% c(1995:2019)),
+       aes(x=dt, y=tmin)) + 
+  stat_summary(fun.y="mean", geom="point", col="red", size=4)+
+  theme(axis.text=element_text(size=14, face="bold"), 
+        axis.title=element_text(size=14, face="bold")) + 
+  geom_smooth(method="lm")
+
+
+```
+
+Regression assumes a linear relationship - and normally distributed data - sometimes that isn’t true, we can use non-parameteric tests to look for trends. In these cases, the Mann-Kendall test is commonly used.
+
+tau ranges from -1 to 1 and denotes the “strength” of the trend; p-value denotes significance. Strength however can not be interpreted as slope!
+
+```{r}
+
+library(Kendall)
+MannKendall(climate_trend$tmin)
+
+```
+
+```{r}
+MannKendall(climate_trend$tmax)
+```
+
+```{r}
+
+MannKendall(climate_trend$prcp)
+
+```
+
+We might also look at difference in means (or variance) between the two periods …Using
+
+T-test or Rank-Sum if we think data is not normally distributed
+```{r}
+t.test(subset(climate_trend$tmin, climate_trend$dt %in% 1953:1969), 
+       subset(climate_trend$tmin, climate_trend$dt %in% 1995:2004))
+```
+
+An alternative approach to aggregation (mean by year) is to look at a particular season, lets say we want to look only at summer (July and August)
+
+```{r}
+# create a variable
+climate_1900$season = ifelse(month(date) %in% c(12,1,2), 1, ifelse(month(date) %in% c(3:5),2, ifelse(month(date) %in% c(6:8),3,4)))
+clim.byseason = climate_1900 %>% group_by(year(date),season) %>% summarize(tmax=mean(tmax), tmin=mean(tmin), precip=sum(prcp))
+
+# look only at summer
+clim.summer = subset(clim.byseason, clim.byseason$season==3)
+tmp=unique(year(date))
+clim.summer$wy = tmp[1:length(tmp)-1]
+
+ggplot(clim.summer, aes(x=wy, y=tmin)) + stat_summary(fun.y="mean", geom="point", col="red", size=4)+theme(axis.text=element_text(size=14, face="bold"), axis.title=element_text(size=14, face="bold")) + geom_smooth(method="lm")+labs(y=" Summer Minimum Daily Temperature C")
+```
+
+```{r}
+
+res=lm(tmax~wy, data=clim.summer)
+summary(res)
+
+```
+
+```{r}
+confint(res,"wy", level=0.95)
+```
+
+
+Summer Maximum Daily Temperature 
+```{r}
+
+ggplot(clim.summer, aes(x=wy, y=tmax)) + stat_summary(fun.y="mean", geom="point", col="red", size=4)+theme(axis.text=element_text(size=14, face="bold"), axis.title=element_text(size=14, face="bold")) + geom_smooth(method="lm")+labs(y=" Summer Maximum Daily Temperature")
+```
+
+```{r}
+
+ggplot(climate_trend, aes(x=dt, y=tmax))+ 
+  stat_summary(fun.y="mean", geom="point", col="red", size=4)+
+  theme(axis.text=element_text(size=14, face="bold"), 
+        axis.title=element_text(size=14, face="bold"))+ 
+  geom_smooth(method="lm")
+```
+
+##### TMAX from 2000 - 2020 rising significantly 
+```{r}
+
+ggplot(subset(climate_trend, climate_trend$dt %in% c(2000:2020)), 
+       aes(x=dt, y=tmax))+
+  labs(x = "Year", y = "Average maximum temperature (degrees f)",
+       title ="Trend in average maximum temperature in Santa Cruz (2000 - 2020)")+
+  stat_summary(fun.y="mean", geom="point", col="red", size=4)+
+  theme(axis.text=element_text(size=14, face="bold"), 
+        axis.title=element_text(size=14, face="bold")) + 
+  geom_smooth(method="lm")+
+  theme_minimal()
+  
+```
+#### Trend in tmax from 1950 - 2000 to play around and change
+```{r}
+
+
+ggplot(subset(climate_trend, climate_trend$dt %in% c(2000:2020)), 
+       aes(x=dt, y=tmin))+
+  labs(x = "Year", y = "Average minimum temperature (degrees f)",
+       title ="Trend in average minimum temperature in Santa Cruz (2000-2020)")+
+  stat_summary(fun.y="mean", geom="point", col="red", size=4)+
+  theme(axis.text=element_text(size=14, face="bold"), 
+        axis.title=element_text(size=14, face="bold")) + 
+  geom_smooth(method="lm")+
+  theme_minimal()
+
+```
+
+```{r}
+ggplot(climate_trend, aes (x = dt, y = prcp))+
+   labs(x = "Year", y = "Average precipitation",
+       title = "Trend in annual average precipitation in Santa Cruz",
+       subtitle = "1900 - 2020")+
+  geom_point(col = "blue")+
+  stat_smooth(data=climate_trend, aes(x=dt, prcp), col="blue", method="lm")+
+  theme_minimal()
+```
+Subset of precipitation 
+```{r}
+ggplot(subset(climate_trend, climate_trend$dt %in% c(1995:2020)), 
+       aes(x= dt, y= prcp))+
+  labs(y = "Annual precipitation (inches)", x = "Year",
+       title = "Annual precipitation in Santa Cruz",
+       subtitle = "1995 - 2020")+
+  stat_summary(fun.y="mean", geom="point", col="blue", size=4)+
+  theme(axis.text=element_text(size=14, face="bold"), 
+        axis.title=element_text(size=14, face="bold")) + 
+  geom_smooth(method="lm")+
+  theme_minimal()
+```
+
